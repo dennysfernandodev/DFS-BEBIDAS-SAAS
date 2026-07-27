@@ -12,8 +12,28 @@ enum UserRole {
   TENANT_ADMIN
   MANAGER
   ATTENDANT
+  KITCHEN
   STOCK_MANAGER
   DRIVER
+}
+
+enum BusinessType {
+  BEVERAGE_STORE
+  CONVENIENCE_STORE
+  SNACK_BAR
+  RESTAURANT
+  PIZZERIA
+  BAKERY
+  MARKET
+  OTHER
+}
+
+enum ProductType {
+  SIMPLE
+  COMBO
+  PREPARED_FOOD
+  BEVERAGE
+  WEIGHTED
 }
 
 enum OrderStatus {
@@ -21,9 +41,26 @@ enum OrderStatus {
   CONFIRMED
   PREPARING
   READY
+  WAITING_DRIVER
+  DRIVER_ASSIGNED
+  PICKED_UP
   OUT_FOR_DELIVERY
   DELIVERED
   CANCELED
+}
+
+enum OrderChannel {
+  WEB_STORE
+  WHATSAPP
+  ADMIN
+  PHONE
+  COUNTER
+}
+
+enum FulfillmentType {
+  DELIVERY
+  PICKUP
+  DINE_IN
 }
 
 enum PaymentStatus {
@@ -42,37 +79,84 @@ enum PaymentMethod {
   MERCADO_PAGO
 }
 
-model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+enum DispatchStatus {
+  PENDING
+  PUBLISHED
+  ACCEPTED
+  PICKED_UP
+  DELIVERED
+  EXPIRED
+  CANCELED
+}
 
-  stores    Store[]
-  users     User[]
-  customers Customer[]
-  products  Product[]
-  orders    Order[]
+enum AddressType {
+  HOME
+  WORK
+  OTHER
+}
+
+model Tenant {
+  id           String       @id @default(cuid())
+  name         String
+  slug         String       @unique
+  businessType BusinessType @default(CONVENIENCE_STORE)
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  stores       Store[]
+  users        User[]
+  customers    Customer[]
+  categories   Category[]
+  products     Product[]
+  orders       Order[]
+  deliveryZones DeliveryZone[]
+  whatsappGroups WhatsAppDispatchGroup[]
 }
 
 model Store {
-  id        String   @id @default(cuid())
-  tenantId  String
-  name      String
-  slug      String
-  phone     String?
-  address   String?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  tenantId              String
+  name                  String
+  slug                  String
+  phone                 String?
+  document              String?
+  addressLine           String?
+  neighborhood          String?
+  city                  String?
+  state                 String?
+  postalCode            String?
+  latitude              Decimal? @db.Decimal(10, 7)
+  longitude             Decimal? @db.Decimal(10, 7)
+  preparationMinutes    Int      @default(20)
+  pickupDeadlineMinutes Int      @default(10)
+  deliveryTargetMinutes Int      @default(20)
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  orders    Order[]
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders                 Order[]
+  inventories            Inventory[]
+  businessHours           BusinessHour[]
+  dispatchGroups          WhatsAppDispatchGroup[]
 
   @@unique([tenantId, slug])
   @@index([tenantId])
+  @@index([city, state])
+}
+
+model BusinessHour {
+  id        String  @id @default(cuid())
+  storeId   String
+  weekday   Int
+  opensAt   String
+  closesAt  String
+  closed    Boolean @default(false)
+
+  store     Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, weekday])
 }
 
 model User {
@@ -80,6 +164,7 @@ model User {
   tenantId     String?
   name         String
   email        String   @unique
+  phone        String?
   passwordHash String
   role         UserRole
   active       Boolean  @default(true)
@@ -97,14 +182,43 @@ model Customer {
   name      String
   phone     String
   email     String?
+  notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  addresses CustomerAddress[]
   orders    Order[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])
+}
+
+model CustomerAddress {
+  id           String      @id @default(cuid())
+  customerId   String
+  type         AddressType @default(HOME)
+  label        String?
+  recipient    String?
+  phone        String?
+  street       String
+  number       String?
+  complement   String?
+  neighborhood String
+  city         String
+  state        String
+  postalCode   String?
+  reference    String?
+  latitude     Decimal?    @db.Decimal(10, 7)
+  longitude    Decimal?    @db.Decimal(10, 7)
+  isDefault    Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  customer     Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([city, neighborhood])
 }
 
 model Category {
@@ -112,74 +226,163 @@ model Category {
   tenantId  String
   name      String
   slug      String
+  sortOrder Int      @default(0)
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   products  Product[]
 
   @@unique([tenantId, slug])
-  @@index([tenantId])
+  @@index([tenantId, active, sortOrder])
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  tenantId    String
-  categoryId  String?
-  name        String
-  slug        String
-  description String?
-  sku         String?
-  price       Decimal  @db.Decimal(10, 2)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String      @id @default(cuid())
+  tenantId           String
+  categoryId         String?
+  name               String
+  slug               String
+  description        String?
+  imageUrl           String?
+  sku                String?
+  type               ProductType @default(SIMPLE)
+  basePrice          Decimal     @db.Decimal(10, 2)
+  promotionalPrice   Decimal?    @db.Decimal(10, 2)
+  preparationMinutes Int?
+  trackInventory     Boolean     @default(true)
+  allowNotes         Boolean     @default(true)
+  active             Boolean     @default(true)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
-  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category    Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  inventory   Inventory?
-  orderItems  OrderItem[]
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category           Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  inventories        Inventory[]
+  optionGroups       ProductOptionGroup[]
+  orderItems         OrderItem[]
 
   @@unique([tenantId, slug])
   @@unique([tenantId, sku])
-  @@index([tenantId])
+  @@index([tenantId, active])
   @@index([categoryId])
+}
+
+model ProductOptionGroup {
+  id          String   @id @default(cuid())
+  productId   String
+  name        String
+  description String?
+  minChoices  Int      @default(0)
+  maxChoices  Int      @default(1)
+  sortOrder   Int      @default(0)
+  required    Boolean  @default(false)
+  active      Boolean  @default(true)
+
+  product     Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  options     ProductOption[]
+
+  @@index([productId, active, sortOrder])
+}
+
+model ProductOption {
+  id          String   @id @default(cuid())
+  groupId     String
+  name        String
+  description String?
+  priceDelta  Decimal  @default(0) @db.Decimal(10, 2)
+  sortOrder   Int      @default(0)
+  active      Boolean  @default(true)
+
+  group       ProductOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  selections  OrderItemOption[]
+
+  @@index([groupId, active, sortOrder])
 }
 
 model Inventory {
   id           String   @id @default(cuid())
-  productId    String   @unique
-  quantity     Int      @default(0)
-  minimumStock Int      @default(0)
+  storeId      String
+  productId    String
+  quantity     Decimal  @default(0) @db.Decimal(12, 3)
+  minimumStock Decimal  @default(0) @db.Decimal(12, 3)
+  reserved     Decimal  @default(0) @db.Decimal(12, 3)
   updatedAt    DateTime @updatedAt
 
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, productId])
+  @@index([storeId])
+  @@index([productId])
+}
+
+model DeliveryZone {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  name                String
+  city                String
+  neighborhoods       String[]
+  fee                 Decimal  @db.Decimal(10, 2)
+  estimatedMinutes    Int      @default(20)
+  minimumOrder        Decimal? @db.Decimal(10, 2)
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders              Order[]
+
+  @@index([tenantId, city, active])
 }
 
 model Order {
-  id            String        @id @default(cuid())
-  tenantId      String
-  storeId       String
-  customerId    String?
-  status        OrderStatus   @default(PENDING)
-  subtotal      Decimal       @db.Decimal(10, 2)
-  deliveryFee   Decimal       @default(0) @db.Decimal(10, 2)
-  discount      Decimal       @default(0) @db.Decimal(10, 2)
-  total         Decimal       @db.Decimal(10, 2)
-  deliveryAddress String?
-  notes         String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id                    String          @id @default(cuid())
+  publicCode            String          @unique
+  tenantId              String
+  storeId               String
+  customerId            String?
+  deliveryZoneId        String?
+  status                OrderStatus     @default(PENDING)
+  channel               OrderChannel    @default(WEB_STORE)
+  fulfillmentType       FulfillmentType @default(DELIVERY)
+  subtotal              Decimal         @db.Decimal(10, 2)
+  deliveryFee           Decimal         @default(0) @db.Decimal(10, 2)
+  serviceFee            Decimal         @default(0) @db.Decimal(10, 2)
+  discount              Decimal         @default(0) @db.Decimal(10, 2)
+  total                 Decimal         @db.Decimal(10, 2)
+  changeFor             Decimal?        @db.Decimal(10, 2)
+  customerName          String?
+  customerPhone         String?
+  deliveryAddress       String?
+  deliveryNeighborhood  String?
+  deliveryReference     String?
+  deliveryLatitude      Decimal?        @db.Decimal(10, 7)
+  deliveryLongitude     Decimal?        @db.Decimal(10, 7)
+  notes                 String?
+  confirmedAt           DateTime?
+  readyAt               DateTime?
+  expectedPickupAt      DateTime?
+  expectedDeliveryAt    DateTime?
+  deliveredAt           DateTime?
+  canceledAt            DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  store         Store         @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  customer      Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  items         OrderItem[]
-  payment       Payment?
+  tenant                Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store                 Store           @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  customer              Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  deliveryZone          DeliveryZone?   @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
+  items                 OrderItem[]
+  payment               Payment?
+  dispatch              DeliveryDispatch?
+  statusEvents          OrderStatusEvent[]
 
-  @@index([tenantId, status])
-  @@index([storeId])
+  @@index([tenantId, status, createdAt])
+  @@index([storeId, status])
   @@index([customerId])
+  @@index([deliveryNeighborhood])
 }
 
 model OrderItem {
@@ -188,14 +391,30 @@ model OrderItem {
   productId   String
   productName String
   unitPrice   Decimal  @db.Decimal(10, 2)
-  quantity    Int
+  quantity    Decimal  @db.Decimal(12, 3)
+  notes       String?
   total       Decimal  @db.Decimal(10, 2)
 
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  order       Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  options     OrderItemOption[]
 
   @@index([orderId])
   @@index([productId])
+}
+
+model OrderItemOption {
+  id          String   @id @default(cuid())
+  orderItemId String
+  optionId    String?
+  optionName  String
+  priceDelta  Decimal  @default(0) @db.Decimal(10, 2)
+  quantity    Int      @default(1)
+
+  orderItem   OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  option      ProductOption? @relation(fields: [optionId], references: [id], onDelete: SetNull)
+
+  @@index([orderItemId])
 }
 
 model Payment {
@@ -205,9 +424,87 @@ model Payment {
   status        PaymentStatus @default(PENDING)
   amount        Decimal       @db.Decimal(10, 2)
   externalId    String?
+  pixQrCode     String?
+  pixCopyPaste  String?
+  expiresAt     DateTime?
   paidAt        DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
   order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model WhatsAppDispatchGroup {
+  id          String   @id @default(cuid())
+  tenantId    String
+  storeId     String?
+  name        String
+  groupJid    String
+  city        String
+  active      Boolean  @default(true)
+  priority    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store       Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  dispatches  DeliveryDispatch[]
+
+  @@unique([tenantId, groupJid])
+  @@index([tenantId, city, active, priority])
+}
+
+model DeliveryDispatch {
+  id                    String         @id @default(cuid())
+  orderId               String         @unique
+  groupId               String
+  status                DispatchStatus @default(PENDING)
+  publishedMessageId    String?
+  acceptedByPhone       String?
+  acceptedByName        String?
+  acceptanceTokenHash   String?
+  publishedAt           DateTime?
+  acceptedAt            DateTime?
+  pickupDeadlineAt      DateTime?
+  pickedUpAt            DateTime?
+  deliveryDeadlineAt    DateTime?
+  deliveredAt           DateTime?
+  expiredAt             DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  order                 Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  group                 WhatsAppDispatchGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  events                DispatchEvent[]
+
+  @@index([groupId, status, createdAt])
+  @@index([acceptedByPhone, status])
+}
+
+model DispatchEvent {
+  id          String         @id @default(cuid())
+  dispatchId  String
+  status      DispatchStatus
+  actorPhone  String?
+  actorName   String?
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+
+  dispatch    DeliveryDispatch @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+
+  @@index([dispatchId, createdAt])
+}
+
+model OrderStatusEvent {
+  id          String      @id @default(cuid())
+  orderId     String
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus
+  actorUserId String?
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
 }
