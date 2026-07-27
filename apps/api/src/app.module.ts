@@ -1,5 +1,6 @@
 import { Controller, Get, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AdminModule } from './modules/admin/admin.module';
 import { ChatbotModule } from './modules/chatbot/chatbot.module';
 
 @Controller('health')
@@ -11,7 +12,7 @@ class HealthController {
 }
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), ChatbotModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), AdminModule, ChatbotModule],
   controllers: [HealthController],
 })
 export class AppModule {}
