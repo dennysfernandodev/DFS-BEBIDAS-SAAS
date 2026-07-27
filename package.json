@@ -1,0 +1,21 @@
+{
+  "name": "dfs-bebidas-saas",
+  "private": true,
+  "packageManager": "pnpm@10.13.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "db:generate": "pnpm --filter @dfs/database prisma generate",
+    "db:migrate": "pnpm --filter @dfs/database prisma migrate dev",
+    "db:studio": "pnpm --filter @dfs/database prisma studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.5",
+    "typescript": "^5.8.3"
+  }
+}
